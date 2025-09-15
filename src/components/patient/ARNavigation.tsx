@@ -34,10 +34,8 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const { heading, linearAcceleration, permissionState, requestPermissions, stopSensors } = useDeviceSensors();
   const { beacons, isScanning, startScan, stopScan } = useBeaconScanner();
   const [steps, setSteps] = useState(0);
-  const [isCalibrated, setIsCalibrated] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isSteppingAnimation, setIsSteppingAnimation] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
   const steppingAnimationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
@@ -102,20 +100,24 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     }
   }, [permissionState, navState]);
 
-  // --- General Cleanup on unmount ---
+  // --- Unified Cleanup on unmount ---
   useEffect(() => {
     return () => {
-      // Stop camera stream
+      // This function runs when the component is unmounted
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
       }
-      // Clear any pending animation timeouts
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      stopSensors();
+      stopScan();
       if (steppingAnimationTimeoutRef.current) {
         clearTimeout(steppingAnimationTimeoutRef.current);
       }
     };
-  }, []);
+  }, [stopSensors, stopScan]);
 
   // --- Attach stream to video element when navigating ---
   useEffect(() => {
@@ -133,28 +135,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
       setNavState('ARRIVED');
     }
   }, [steps]);
-
-  // --- Robust Exit Logic ---
-  useEffect(() => {
-    if (isExiting) {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-      stopSensors();
-      stopScan();
-      
-      const timer = setTimeout(() => {
-        onBack();
-      }, 100);
-
-      return () => clearTimeout(timer);
-    }
-  }, [isExiting, onBack, stopSensors, stopScan]);
-
 
   // --- UI Event Handlers ---
   const handleStart = async () => {
@@ -186,14 +166,11 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   };
 
   const handleCalibrationComplete = () => {
-    setIsCalibrated(true);
     setNavState('NAVIGATING');
   };
 
   const handleFinish = () => {
-    if (!isExiting) {
-      setIsExiting(true);
-    }
+    onBack();
   };
   
   const relativeBearing = useMemo(() => {
@@ -257,11 +234,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-900 overflow-hidden flex flex-col justify-between">
-      {isExiting && (
-        <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center" aria-live="assertive">
-          <p className="text-white text-lg animate-pulse">Returning to dashboard...</p>
-        </div>
-      )}
       <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/30"></div>
       
