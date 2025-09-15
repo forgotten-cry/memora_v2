@@ -100,16 +100,13 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     }
   }, [permissionState, navState]);
 
-  // --- Unified Cleanup on unmount ---
+  // --- Safety-net Cleanup on unmount ---
   useEffect(() => {
+    // This cleanup runs if the component unmounts for any reason other
+    // than the user clicking Back/Done (e.g. switching views globally).
     return () => {
-      // This function runs when the component is unmounted
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
       }
       stopSensors();
       stopScan();
@@ -170,6 +167,31 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   };
 
   const handleFinish = () => {
+    // Explicitly shut down all AR resources before navigating away.
+    // This prevents race conditions where the component unmounts before
+    // browser resources like the camera are fully released.
+    
+    // Stop camera stream and detach from video element.
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    // Stop motion sensor listeners.
+    stopSensors();
+    
+    // Stop Bluetooth beacon scanner.
+    stopScan();
+    
+    // Clear any pending animation timers to prevent state updates on unmounted component.
+    if (steppingAnimationTimeoutRef.current) {
+      clearTimeout(steppingAnimationTimeoutRef.current);
+    }
+    
+    // Finally, trigger the navigation back to the previous screen.
     onBack();
   };
   
