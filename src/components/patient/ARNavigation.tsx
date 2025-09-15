@@ -166,9 +166,13 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   };
 
   const handleFinish = () => {
-    setSteps(0);
-    setIsCalibrated(false);
-    // This now correctly triggers the unmount and returns to the home screen.
+    // Proactively stop the camera stream before telling the parent to unmount.
+    // This prevents race conditions where the component unmounts before cleanup effects run.
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    // Now, trigger the navigation back to the home screen.
     onBack();
   };
   
@@ -213,8 +217,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
       case 'ARRIVED':
         return (
             <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-full max-w-sm px-4">
-                <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-800/50 p-6 text-center shadow-2xl backdrop-blur-lg">
-                    <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] bg-gradient-to-br from-indigo-500/50 via-purple-500/50 to-pink-500/50 animate-glow"></div>
+                <div className="relative overflow-hidden rounded-2xl border border-blue-800 bg-slate-900 p-6 text-center shadow-2xl">
                     <div className="relative z-10 flex flex-col items-center">
                         <div className="text-5xl mb-4">🎉</div>
                         <h2 className="text-3xl font-bold text-white">You have arrived!</h2>
@@ -306,13 +309,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         }
         .animate-step-bump {
             animation: step-bump 0.3s ease-out;
-        }
-        @keyframes glow {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .animate-glow {
-            animation: glow 10s linear infinite;
         }
       `}</style>
     </div>
