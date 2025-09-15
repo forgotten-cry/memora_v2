@@ -27,8 +27,8 @@ const MenuItem: React.FC<{ name: string; icon: React.ReactNode; onClick: () => v
 
 
 const PatientHome: React.FC<PatientHomeProps> = ({ setScreen }) => {
-  const { state, dispatch } = useAppContext();
-  const { sharedQuote } = state;
+  const { dispatch } = useAppContext();
+  const { sharedQuote } = useAppContext().state;
 
   const handleSOS = () => {
     const newAlert = {

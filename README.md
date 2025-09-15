@@ -8,7 +8,7 @@ Memora is a single application with three distinct views, each tailored to a spe
 
 ### 🧑‍⚕️ Patient View
 The primary interface for the person with dementia, designed for simplicity and ease of use.
-- **AR Home Navigation:** Uses the phone's camera and compass to provide simple, turn-by-turn directions to rooms within the home.
+- **Robust AR Home Navigation:** A rebuilt navigation system using the phone's camera and motion sensors. It features a compass calibration step, a stabilized AR arrow that correctly points to the destination relative to the real world, and automatic step detection.
 - **AI Companion ("Digi"):** A friendly, voice-enabled AI chatbot for conversation and emotional support, powered by the Gemini API.
 - **Daily Reminders:** Simple, icon-driven reminders for medications, meals, and hydration.
 - **Cognitive Games:** A simple memory matching game to provide gentle mental stimulation.
@@ -31,6 +31,25 @@ A portal for family members to stay connected and involved in their loved one's 
 - **Voice Messages:** Share voice notes to stay connected personally.
 - **View Schedule & Alerts:** Stay informed about the patient's daily plan and any urgent alerts.
 
+## 🧭 How AR Navigation Works
+
+The AR navigation system has been re-architected for accuracy and reliability.
+
+1.  **Permissions & Calibration:** The user is first prompted to grant camera and motion sensor permissions. Then, a mandatory calibration screen guides the user to rotate their device, which helps stabilize the magnetometer (compass) for an accurate heading.
+2.  **Sensor Fusion & Smoothing:** The app uses a custom `useDeviceSensors` hook that reads from the `deviceorientation` API. To prevent a jittery arrow, it applies a moving average filter to the raw compass heading, providing a smooth but responsive orientation.
+3.  **Pedestrian Dead Reckoning (PDR):** Instead of manual buttons, the system uses the device's accelerometer (`devicemotion`) to automatically detect steps. A peak-detection algorithm with a lockout period ensures that steps are counted accurately.
+4.  **Accurate Arrow Pointing:** The core of the system is its arrow logic. The arrow's on-screen rotation is calculated with the formula `relativeBearing = normalizeAngle(destinationBearing - deviceHeading)`. This ensures the arrow visually **rotates with the device**, while its direction always **points to the destination's real-world bearing**.
+5.  **Developer Mode & Testing:** A "Dev Mode" toggle is available within the AR view. This enables a debug overlay showing live sensor data. It also allows developers to manually set a simulated device heading to easily test navigation logic, such as the "296° case" outlined below.
+
+### Testing the "296° Case"
+1.  Navigate to the AR feature on a mobile device.
+2.  Enable the "Dev Mode" toggle in the header.
+3.  The debug overlay will appear. The destination bearing (`B_dest`) is hardcoded to **296°**.
+4.  Use the slider in the debug overlay to set the simulated heading (`H_device`) to **296°**.
+5.  **Observe:** The `relative` bearing should be `0°`, and the arrow on screen should point straight up.
+6.  Change the simulated heading to **206°**.
+7.  **Observe:** The `relative` bearing should be `90°`, and the arrow on screen should point directly to the right.
+
 ## 🛠️ Tech Stack
 
 - **Frontend:** React, TypeScript, Tailwind CSS
@@ -38,7 +57,7 @@ A portal for family members to stay connected and involved in their loved one's 
     - Google Gemini API (`@google/genai`) for the AI companion and quote generation.
 - **Web APIs:**
     - `getUserMedia` (Camera API)
-    - `DeviceOrientationEvent` (Compass/Motion Sensors)
+    - `DeviceOrientationEvent` & `DeviceMotionEvent` (Motion Sensors)
     - `SpeechRecognition` (Voice Input)
     - `MediaRecorder` (Audio Recording)
 
