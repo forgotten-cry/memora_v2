@@ -16,7 +16,7 @@ const NavigationArrow: React.FC<NavigationArrowProps> = ({ relativeBearing }) =>
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="drop-shadow-lg"
+        className="drop-shadow-lg animate-arrow-pulse"
         style={{ filter: 'url(#arrow-glow)' }}
       >
         <defs>
@@ -36,6 +36,15 @@ const NavigationArrow: React.FC<NavigationArrowProps> = ({ relativeBearing }) =>
           strokeLinejoin="round"
         />
       </svg>
+      <style>{`
+        @keyframes arrow-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.95); opacity: 0.85; }
+        }
+        .animate-arrow-pulse {
+            animation: arrow-pulse 2.5s infinite ease-in-out;
+        }
+      `}</style>
     </div>
   );
 };

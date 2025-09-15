@@ -1,3 +1,5 @@
+import { MouseEvent, TouchEvent } from 'react';
+
 export interface Reminder {
   id: string;
   title: string;
@@ -62,6 +64,13 @@ export enum PatientScreen {
     COGNITIVE_GAMES = 'COGNITIVE_GAMES',
     MEMORY_ALBUM = 'MEMORY_ALBUM',
     VOICE_MESSAGES = 'VOICE_MESSAGES',
+}
+
+export interface Beacon {
+  id: string;
+  name: string | null;
+  rssi: number;
+  distance: number;
 }
 
 export type AppAction =

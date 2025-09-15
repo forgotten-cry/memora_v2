@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 type PermissionState = 'prompt' | 'granted' | 'denied';
 
 interface DeviceSensors {
   heading: number | null;
-  acceleration: { x: number; y: number; z: number; } | null;
+  linearAcceleration: { x: number; y: number; z: number; } | null;
   permissionState: PermissionState;
   requestPermissions: () => Promise<boolean>;
 }
@@ -63,9 +63,11 @@ const getSmoothedHeading = (newHeading: number): number => {
 
 export const useDeviceSensors = (): DeviceSensors => {
   const [heading, setHeading] = useState<number | null>(null);
-  const [acceleration, setAcceleration] = useState<{ x: number; y: number; z: number } | null>(null);
+  const [linearAcceleration, setLinearAcceleration] = useState<{ x: number; y: number; z: number } | null>(null);
   const [permissionState, setPermissionState] = useState<PermissionState>('prompt');
   
+  const gravityRef = useRef([0, 0, 0]);
+
   const handleOrientation = (event: DeviceOrientationEvent) => {
     if (event.alpha !== null) {
       // For webkit browsers (iOS), event.webkitCompassHeading is more reliable
@@ -75,11 +77,30 @@ export const useDeviceSensors = (): DeviceSensors => {
   };
 
   const handleMotion = (event: DeviceMotionEvent) => {
-    if (event.acceleration) {
+    // Prefer the browser's native linear acceleration if available
+    if (event.acceleration && event.acceleration.x !== null) {
       const { x, y, z } = event.acceleration;
       if (x !== null && y !== null && z !== null) {
-        setAcceleration({ x, y, z });
+        setLinearAcceleration({ x, y, z });
       }
+    } 
+    // Otherwise, calculate it from accelerationIncludingGravity
+    else if (event.accelerationIncludingGravity && event.accelerationIncludingGravity.x !== null) {
+      const acc = event.accelerationIncludingGravity;
+      const alpha = 0.8; // Low-pass filter alpha. Higher value = more smoothing.
+
+      // Isolate gravity with a low-pass filter
+      gravityRef.current[0] = alpha * gravityRef.current[0] + (1 - alpha) * (acc.x || 0);
+      gravityRef.current[1] = alpha * gravityRef.current[1] + (1 - alpha) * (acc.y || 0);
+      gravityRef.current[2] = alpha * gravityRef.current[2] + (1 - alpha) * (acc.z || 0);
+
+      // Subtract gravity to get linear acceleration
+      const linear = {
+        x: (acc.x || 0) - gravityRef.current[0],
+        y: (acc.y || 0) - gravityRef.current[1],
+        z: (acc.z || 0) - gravityRef.current[2],
+      };
+      setLinearAcceleration(linear);
     }
   };
 
@@ -120,5 +141,5 @@ export const useDeviceSensors = (): DeviceSensors => {
     };
   }, [permissionState]);
 
-  return { heading, acceleration, permissionState, requestPermissions };
+  return { heading, linearAcceleration, permissionState, requestPermissions };
 };

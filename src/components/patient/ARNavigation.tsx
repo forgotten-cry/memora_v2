@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useDeviceSensors } from '../../hooks/useDeviceSensors';
+import { useBeaconScanner } from '../../hooks/useBeaconScanner';
 import { normalizeAngle } from '../../utils/navigation';
 import CalibrationModal from './ARNavigation/CalibrationModal';
 import NavigationArrow from './ARNavigation/NavigationArrow';
@@ -10,8 +11,13 @@ const DESTINATION_BEARING = 296; // Target bearing in degrees (e.g., 296° NW)
 const TOTAL_STEPS = 10;
 const ARRIVAL_THRESHOLD_STEPS = 0.5;
 // PDR (Step Detection) Config
-const STEP_THRESHOLD = 1.3; // Acceleration magnitude threshold (g-force)
+const STEP_THRESHOLD = 1.8; // Linear acceleration magnitude threshold in m/s^2.
 const STEP_LOCKOUT_MS = 400; // Cooldown to prevent double counting a single step
+// Beacon Checkpoint Config
+const BEACON_CHECKPOINTS = [
+    { name: 'Memora-Hallway', step_checkpoint: 5, proximity_m: 1.5 }
+];
+
 
 interface ARNavigationProps {
   onBack: () => void;
@@ -25,10 +31,12 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const streamRef = useRef<MediaStream | null>(null);
 
   // --- Sensor and Navigation State ---
-  const { heading, acceleration, permissionState, requestPermissions } = useDeviceSensors();
+  const { heading, linearAcceleration, permissionState, requestPermissions } = useDeviceSensors();
+  const { beacons, isScanning, startScan } = useBeaconScanner();
   const [steps, setSteps] = useState(0);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [isSteppingAnimation, setIsSteppingAnimation] = useState(false);
 
 
   // --- Dev Mode ---
@@ -39,31 +47,57 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
 
   // --- Step Detection Logic ---
   const lastStepTimeRef = useRef(0);
-  const isPeakRef = useRef(false);
+  const isPotentialStepRef = useRef(false);
 
   useEffect(() => {
-    if (navState !== 'NAVIGATING' || !acceleration) return;
+    if (navState !== 'NAVIGATING' || !linearAcceleration) return;
 
-    const { x, y, z } = acceleration;
-    const magnitude = Math.sqrt(x * x + y * y + z * z) / 9.81; // Normalize to g-force
+    const { x, y, z } = linearAcceleration;
+    const magnitude = Math.sqrt(x * x + y * y + z * z); // Magnitude is in m/s^2
 
     const now = Date.now();
     if (now - lastStepTimeRef.current < STEP_LOCKOUT_MS) return;
 
-    if (magnitude > STEP_THRESHOLD && !isPeakRef.current) {
-        isPeakRef.current = true; // Mark that we've entered a peak
-    } else if (magnitude < 1.0 && isPeakRef.current) {
-        // We've completed a peak-trough cycle, count it as a step
-        setSteps(s => Math.min(s + 1, TOTAL_STEPS));
+    // A simple peak-detection logic: step is counted when acceleration rises above
+    // a threshold and then drops below it, indicating a complete motion.
+    if (magnitude > STEP_THRESHOLD && !isPotentialStepRef.current) {
+        isPotentialStepRef.current = true; // We've started a potential step
+    } else if (magnitude < (STEP_THRESHOLD * 0.7) && isPotentialStepRef.current) {
+        // We've crossed the threshold and now dropped significantly, confirming the step
+        isPotentialStepRef.current = false;
         lastStepTimeRef.current = now;
-        isPeakRef.current = false; // Reset for the next step
+        setSteps(s => {
+            const newSteps = s + 1;
+            // Trigger animation for visual feedback
+            setIsSteppingAnimation(true);
+            setTimeout(() => setIsSteppingAnimation(false), 300); // Animation duration
+            return Math.min(newSteps, TOTAL_STEPS);
+        });
     }
-  }, [acceleration, navState]);
+  }, [linearAcceleration, navState]);
   
+  // --- Beacon Drift Correction ---
+  useEffect(() => {
+    if (navState !== 'NAVIGATING' || beacons.length === 0) return;
+
+    for (const beacon of beacons) {
+        const checkpoint = BEACON_CHECKPOINTS.find(cp => cp.name === beacon.name);
+        if (checkpoint && beacon.distance < checkpoint.proximity_m) {
+            // Correct the step count if we are closer to a known checkpoint
+            // and our current step count is lower than the checkpoint's value.
+            setSteps(currentSteps => {
+                if(currentSteps < checkpoint.step_checkpoint) {
+                    console.log(`Drift corrected by ${checkpoint.name}. Steps updated to ${checkpoint.step_checkpoint}`);
+                    return checkpoint.step_checkpoint;
+                }
+                return currentSteps;
+            });
+        }
+    }
+  }, [beacons, navState]);
+
   // --- State Machine and Permissions ---
   useEffect(() => {
-    // This effect now simply moves to calibration if permissions are already granted.
-    // The main logic is now in the handleStart function.
     if (navState === 'REQUESTING_PERMISSIONS' && permissionState === 'granted') {
       setNavState('CALIBRATING');
     }
@@ -71,7 +105,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
 
   // --- Stream Cleanup ---
   useEffect(() => {
-    // This effect runs only once on mount and cleans up the camera stream on unmount.
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -100,31 +133,28 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   // --- UI Event Handlers ---
   const handleStart = async () => {
     setPermissionError(null);
-    try {
-        // Request motion sensor permissions first.
-        const motionGranted = await requestPermissions();
-        if (!motionGranted) {
-            setPermissionError("Motion sensor access is required. Please enable it in your browser settings.");
-            return;
-        }
+    let motionGranted = false;
+    if (permissionState === 'granted') {
+        motionGranted = true;
+    } else {
+        motionGranted = await requestPermissions();
+    }
+    
+    if (!motionGranted) {
+        setPermissionError("Motion sensor access is required. Please enable it in your browser settings.");
+        return;
+    }
 
-        // Then, request camera permissions.
+    try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         streamRef.current = stream;
-
-        // If both are successful, proceed.
         setNavState('CALIBRATING');
-
     } catch (err) {
         console.error("Permission error:", err);
-        if (err instanceof DOMException) {
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                 setPermissionError("Camera access was denied. Please enable it in your browser settings.");
-            } else {
-                 setPermissionError("Could not access camera. It may be in use by another app.");
-            }
+        if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+             setPermissionError("Camera access was denied. Please enable it in your browser settings.");
         } else {
-            setPermissionError("An unknown error occurred while accessing device features.");
+             setPermissionError("Could not access camera. It may be in use by another app.");
         }
     }
   };
@@ -136,7 +166,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   };
 
   const handleFinish = () => {
-    // Reset state for next navigation
     setSteps(0);
     setIsCalibrated(false);
     onBack();
@@ -144,15 +173,11 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   
   const relativeBearing = useMemo(() => {
     if (effectiveHeading === null) return 0;
-    // This is the core logic from the spec
-    // Example: B_dest=296, H_device=296 -> relative=0 (arrow points straight)
-    // Example: B_dest=296, H_device=206 -> relative=90 (arrow points right)
     return normalizeAngle(DESTINATION_BEARING - effectiveHeading);
   }, [effectiveHeading]);
 
   const stepsRemaining = Math.max(0, TOTAL_STEPS - steps);
 
-  // --- Render Logic ---
   const renderContent = () => {
     switch (navState) {
       case 'REQUESTING_PERMISSIONS':
@@ -209,7 +234,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         <button onClick={navState === 'ARRIVED' ? handleFinish : onBack} className="text-white text-sm p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1">
             <span className='text-lg'>&larr;</span> Back
         </button>
-        {/* Dev Mode Toggle */}
         <div className="flex items-center gap-2 text-xs text-white">
             <label htmlFor="devModeToggle">Dev Mode</label>
             <input
@@ -222,7 +246,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         </div>
       </header>
 
-      <main className="relative flex-grow flex flex-col items-center justify-center text-white p-4">
+      <main className={`relative flex-grow flex flex-col items-center justify-center text-white p-4 transition-transform duration-300 ${isSteppingAnimation ? 'animate-step-bump' : ''}`}>
         {renderContent()}
       </main>
 
@@ -234,10 +258,12 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
             steps={steps}
             simulatedHeading={simulatedHeading}
             setSimulatedHeading={setSimulatedHeading}
+            beacons={beacons}
+            isScanning={isScanning}
+            startScan={startScan}
         />
       )}
       
-      {/* Basic styles for the toggle switch */}
       <style>{`
         .toggle-checkbox {
             appearance: none;
@@ -265,6 +291,14 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         }
         .toggle-checkbox:checked::before {
             transform: translateX(14px);
+        }
+        @keyframes step-bump {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+            100% { transform: scale(1); }
+        }
+        .animate-step-bump {
+            animation: step-bump 0.3s ease-out;
         }
       `}</style>
     </div>
