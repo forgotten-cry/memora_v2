@@ -37,10 +37,9 @@ export const useBeaconScanner = () => {
     const [beacons, setBeacons] = useState<Beacon[]>([]);
     const [isScanning, setIsScanning] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // fix: `useRef` was not imported.
     const scanControllerRef = useRef<any>(null);
 
-    const handleAdvertisement = (event: any) => {
+    const handleAdvertisement = useCallback((event: any) => {
         const { device, rssi } = event;
         const name = device.name || null;
         const id = device.id;
@@ -70,7 +69,19 @@ export const useBeaconScanner = () => {
             // Sort by distance (closest first)
             return updatedBeacons.sort((a, b) => a.distance - b.distance);
         });
-    };
+    }, []);
+
+    const stopScan = useCallback(() => {
+        if (scanControllerRef.current) {
+            scanControllerRef.current.stop();
+            scanControllerRef.current = null;
+            console.log("BLE scan stopped.");
+        }
+        setIsScanning(false);
+        // fix: The type definition for the experimental `navigator.bluetooth` API is incomplete. Cast to `any` to allow removing an event listener.
+        (navigator.bluetooth as any).removeEventListener('advertisementreceived', handleAdvertisement);
+    }, [handleAdvertisement]);
+
 
     const startScan = useCallback(async () => {
         if (!navigator.bluetooth) {
@@ -103,19 +114,8 @@ export const useBeaconScanner = () => {
             }
             setIsScanning(false);
         }
-    }, [isScanning]);
+    }, [isScanning, handleAdvertisement]);
     
-    const stopScan = useCallback(() => {
-        if (scanControllerRef.current) {
-            scanControllerRef.current.stop();
-            scanControllerRef.current = null;
-            console.log("BLE scan stopped.");
-        }
-        setIsScanning(false);
-        // fix: The type definition for the experimental `navigator.bluetooth` API is incomplete. Cast to `any` to allow removing an event listener.
-        (navigator.bluetooth as any).removeEventListener('advertisementreceived', handleAdvertisement);
-    }, []);
-
     // Cleanup on unmount
     useEffect(() => {
         return () => {
