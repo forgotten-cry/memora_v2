@@ -37,6 +37,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isSteppingAnimation, setIsSteppingAnimation] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
 
 
   // --- Dev Mode ---
@@ -58,19 +59,15 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     const now = Date.now();
     if (now - lastStepTimeRef.current < STEP_LOCKOUT_MS) return;
 
-    // A simple peak-detection logic: step is counted when acceleration rises above
-    // a threshold and then drops below it, indicating a complete motion.
     if (magnitude > STEP_THRESHOLD && !isPotentialStepRef.current) {
-        isPotentialStepRef.current = true; // We've started a potential step
+        isPotentialStepRef.current = true;
     } else if (magnitude < (STEP_THRESHOLD * 0.7) && isPotentialStepRef.current) {
-        // We've crossed the threshold and now dropped significantly, confirming the step
         isPotentialStepRef.current = false;
         lastStepTimeRef.current = now;
         setSteps(s => {
             const newSteps = s + 1;
-            // Trigger animation for visual feedback
             setIsSteppingAnimation(true);
-            setTimeout(() => setIsSteppingAnimation(false), 300); // Animation duration
+            setTimeout(() => setIsSteppingAnimation(false), 300);
             return Math.min(newSteps, TOTAL_STEPS);
         });
     }
@@ -83,8 +80,6 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     for (const beacon of beacons) {
         const checkpoint = BEACON_CHECKPOINTS.find(cp => cp.name === beacon.name);
         if (checkpoint && beacon.distance < checkpoint.proximity_m) {
-            // Correct the step count if we are closer to a known checkpoint
-            // and our current step count is lower than the checkpoint's value.
             setSteps(currentSteps => {
                 if(currentSteps < checkpoint.step_checkpoint) {
                     console.log(`Drift corrected by ${checkpoint.name}. Steps updated to ${checkpoint.step_checkpoint}`);
@@ -103,7 +98,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     }
   }, [permissionState, navState]);
 
-  // --- Stream Cleanup ---
+  // --- Stream Cleanup on unmount ---
   useEffect(() => {
     return () => {
       if (streamRef.current) {
@@ -129,6 +124,28 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
       setNavState('ARRIVED');
     }
   }, [steps]);
+
+  // --- Robust Exit Logic ---
+  useEffect(() => {
+    if (isExiting) {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      stopSensors();
+      stopScan();
+      
+      const timer = setTimeout(() => {
+        onBack();
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isExiting, onBack, stopSensors, stopScan]);
+
 
   // --- UI Event Handlers ---
   const handleStart = async () => {
@@ -159,24 +176,15 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     }
   };
 
-
   const handleCalibrationComplete = () => {
     setIsCalibrated(true);
     setNavState('NAVIGATING');
   };
 
   const handleFinish = () => {
-    // Proactively stop all external listeners and streams before unmounting
-    // to prevent race conditions.
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
+    if (!isExiting) {
+      setIsExiting(true);
     }
-    stopSensors();
-    stopScan();
-  
-    // Now it is safe to trigger the unmount.
-    onBack();
   };
   
   const relativeBearing = useMemo(() => {
@@ -240,6 +248,11 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-900 overflow-hidden flex flex-col justify-between">
+      {isExiting && (
+        <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center" aria-live="assertive">
+          <p className="text-white text-lg animate-pulse">Returning to dashboard...</p>
+        </div>
+      )}
       <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/30"></div>
       

@@ -27,12 +27,10 @@ const HEADING_SMOOTHING_BUFFER_SIZE = 10;
 const headingBuffer: number[] = [];
 
 const getSmoothedHeading = (newHeading: number): number => {
-    // Handle the 360 -> 0 degree wrap-around by using sine and cosine components
     if (headingBuffer.length > 0) {
         const lastAvg = headingBuffer.reduce((sum, val) => sum + val, 0) / headingBuffer.length;
-        // If the new value jumps more than 180 degrees, it's likely a wrap-around, reset buffer
         if (Math.abs(newHeading - lastAvg) > 180) {
-            headingBuffer.length = 0; // Clear the buffer
+            headingBuffer.length = 0;
         }
     }
 
@@ -41,7 +39,6 @@ const getSmoothedHeading = (newHeading: number): number => {
         headingBuffer.shift();
     }
 
-    // Calculate the average of the angles
     let sumX = 0;
     let sumY = 0;
     for (const angle of headingBuffer) {
@@ -71,31 +68,26 @@ export const useDeviceSensors = (): DeviceSensors => {
 
   const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
     if (event.alpha !== null) {
-      // For webkit browsers (iOS), event.webkitCompassHeading is more reliable
       const compassHeading = (event as any).webkitCompassHeading || event.alpha;
-      setHeading(getSmoothedHeading(360 - compassHeading)); // Invert to get North=0
+      setHeading(getSmoothedHeading(360 - compassHeading));
     }
   }, []);
 
   const handleMotion = useCallback((event: DeviceMotionEvent) => {
-    // Prefer the browser's native linear acceleration if available
     if (event.acceleration && event.acceleration.x !== null) {
       const { x, y, z } = event.acceleration;
       if (x !== null && y !== null && z !== null) {
         setLinearAcceleration({ x, y, z });
       }
     } 
-    // Otherwise, calculate it from accelerationIncludingGravity
     else if (event.accelerationIncludingGravity && event.accelerationIncludingGravity.x !== null) {
       const acc = event.accelerationIncludingGravity;
-      const alpha = 0.8; // Low-pass filter alpha. Higher value = more smoothing.
+      const alpha = 0.8;
 
-      // Isolate gravity with a low-pass filter
       gravityRef.current[0] = alpha * gravityRef.current[0] + (1 - alpha) * (acc.x || 0);
       gravityRef.current[1] = alpha * gravityRef.current[1] + (1 - alpha) * (acc.y || 0);
       gravityRef.current[2] = alpha * gravityRef.current[2] + (1 - alpha) * (acc.z || 0);
 
-      // Subtract gravity to get linear acceleration
       const linear = {
         x: (acc.x || 0) - gravityRef.current[0],
         y: (acc.y || 0) - gravityRef.current[1],
@@ -112,7 +104,6 @@ export const useDeviceSensors = (): DeviceSensors => {
 
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (!isIOS13OrNewer() || typeof (DeviceOrientationEvent as any).requestPermission !== 'function') {
-      // For Android and non-iOS 13+ devices, permissions are often granted by default or via browser settings
       setPermissionState('granted');
       return true;
     }
