@@ -168,6 +168,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const handleFinish = () => {
     setSteps(0);
     setIsCalibrated(false);
+    // This now correctly triggers the unmount and returns to the home screen.
     onBack();
   };
   
@@ -211,16 +212,22 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
 
       case 'ARRIVED':
         return (
-          <div className="flex flex-col items-center justify-center text-center h-full text-white p-4 bg-black/50">
-            <div className="text-6xl mb-4">🎉</div>
-            <h2 className="text-4xl font-bold">You have arrived!</h2>
-            <button
-              onClick={handleFinish}
-              className="mt-8 px-8 py-4 bg-green-700 text-white font-bold text-xl rounded-full shadow-lg hover:bg-green-600 active:scale-95 transition-all"
-            >
-              Done
-            </button>
-          </div>
+            <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-full max-w-sm px-4">
+                <div className="relative overflow-hidden rounded-2xl border border-slate-700 bg-slate-800/50 p-6 text-center shadow-2xl backdrop-blur-lg">
+                    <div className="absolute -top-1/2 -left-1/2 w-[200%] h-[200%] bg-gradient-to-br from-indigo-500/50 via-purple-500/50 to-pink-500/50 animate-glow"></div>
+                    <div className="relative z-10 flex flex-col items-center">
+                        <div className="text-5xl mb-4">🎉</div>
+                        <h2 className="text-3xl font-bold text-white">You have arrived!</h2>
+                        <p className="text-slate-300 mt-1">You've reached your destination.</p>
+                        <button
+                          onClick={handleFinish}
+                          className="mt-6 w-full px-8 py-3 bg-green-600/80 text-white font-bold text-lg rounded-full shadow-lg hover:bg-green-600 active:scale-95 transition-all border border-green-500"
+                        >
+                          Done
+                        </button>
+                    </div>
+                </div>
+            </div>
         );
     }
   };
@@ -231,7 +238,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
       <div className="absolute inset-0 bg-black/30"></div>
       
       <header className="relative p-4 flex justify-between items-center bg-black/50 backdrop-blur-sm z-10">
-        <button onClick={navState === 'ARRIVED' ? handleFinish : onBack} className="text-white text-sm p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1">
+        <button onClick={handleFinish} className="text-white text-sm p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1">
             <span className='text-lg'>&larr;</span> Back
         </button>
         <div className="flex items-center gap-2 text-xs text-white">
@@ -299,6 +306,13 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         }
         .animate-step-bump {
             animation: step-bump 0.3s ease-out;
+        }
+        @keyframes glow {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .animate-glow {
+            animation: glow 10s linear infinite;
         }
       `}</style>
     </div>
