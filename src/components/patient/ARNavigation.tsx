@@ -28,6 +28,8 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const { heading, acceleration, permissionState, requestPermissions } = useDeviceSensors();
   const [steps, setSteps] = useState(0);
   const [isCalibrated, setIsCalibrated] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+
 
   // --- Dev Mode ---
   const [devMode, setDevMode] = useState(false);
@@ -60,42 +62,33 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   
   // --- State Machine and Permissions ---
   useEffect(() => {
-    if (navState === 'REQUESTING_PERMISSIONS') {
-      if (permissionState === 'granted') {
-        setNavState('CALIBRATING');
-      } else if (permissionState === 'denied') {
-        // Handled by the button's disabled state and message
-      }
+    // This effect now simply moves to calibration if permissions are already granted.
+    // The main logic is now in the handleStart function.
+    if (navState === 'REQUESTING_PERMISSIONS' && permissionState === 'granted') {
+      setNavState('CALIBRATING');
     }
   }, [permissionState, navState]);
 
-  // --- Camera Management ---
+  // --- Stream Cleanup ---
   useEffect(() => {
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (err) {
-        console.error("Camera access error:", err);
-        // Display error to user in a real app
-      }
-    };
-
-    if (isCalibrated) {
-      startCamera();
-    }
-
-    // Cleanup
+    // This effect runs only once on mount and cleans up the camera stream on unmount.
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
       }
     };
-  }, [isCalibrated]);
+  }, []);
+
+  // --- Attach stream to video element when navigating ---
+  useEffect(() => {
+    if (navState === 'NAVIGATING' && videoRef.current && streamRef.current) {
+        if(videoRef.current.srcObject !== streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+        }
+    }
+  }, [navState]);
+
 
   // --- Arrival Logic ---
   useEffect(() => {
@@ -106,12 +99,36 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
 
   // --- UI Event Handlers ---
   const handleStart = async () => {
-    if (permissionState === 'prompt') {
-      await requestPermissions();
-    } else if (permissionState === 'granted') {
-      setNavState('CALIBRATING');
+    setPermissionError(null);
+    try {
+        // Request motion sensor permissions first.
+        const motionGranted = await requestPermissions();
+        if (!motionGranted) {
+            setPermissionError("Motion sensor access is required. Please enable it in your browser settings.");
+            return;
+        }
+
+        // Then, request camera permissions.
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        streamRef.current = stream;
+
+        // If both are successful, proceed.
+        setNavState('CALIBRATING');
+
+    } catch (err) {
+        console.error("Permission error:", err);
+        if (err instanceof DOMException) {
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                 setPermissionError("Camera access was denied. Please enable it in your browser settings.");
+            } else {
+                 setPermissionError("Could not access camera. It may be in use by another app.");
+            }
+        } else {
+            setPermissionError("An unknown error occurred while accessing device features.");
+        }
     }
   };
+
 
   const handleCalibrationComplete = () => {
     setIsCalibrated(true);
@@ -145,12 +162,11 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
             <p className="mt-2 text-slate-400">This feature requires access to your camera and motion sensors.</p>
             <button
               onClick={handleStart}
-              disabled={permissionState === 'denied'}
               className="mt-8 px-8 py-4 bg-slate-700 text-white font-bold text-xl rounded-full shadow-lg hover:bg-slate-600 active:scale-95 transition-all disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed"
             >
-              {permissionState === 'denied' ? 'Permissions Denied' : 'Grant Permissions'}
+              Grant Permissions
             </button>
-            {permissionState === 'denied' && <p className="text-sm text-red-400 mt-4">Please enable camera and motion sensor access in your browser settings.</p>}
+            {permissionError && <p className="text-sm text-red-400 mt-4 max-w-xs">{permissionError}</p>}
           </div>
         );
 
@@ -210,7 +226,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         {renderContent()}
       </main>
 
-      {devMode && (
+      {devMode && navState === 'NAVIGATING' && (
         <DebugOverlay
             deviceHeading={heading}
             destinationBearing={DESTINATION_BEARING}
