@@ -38,6 +38,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isSteppingAnimation, setIsSteppingAnimation] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const steppingAnimationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
   // --- Dev Mode ---
@@ -67,7 +68,10 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
         setSteps(s => {
             const newSteps = s + 1;
             setIsSteppingAnimation(true);
-            setTimeout(() => setIsSteppingAnimation(false), 300);
+            if (steppingAnimationTimeoutRef.current) {
+                clearTimeout(steppingAnimationTimeoutRef.current);
+            }
+            steppingAnimationTimeoutRef.current = setTimeout(() => setIsSteppingAnimation(false), 300);
             return Math.min(newSteps, TOTAL_STEPS);
         });
     }
@@ -98,12 +102,17 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
     }
   }, [permissionState, navState]);
 
-  // --- Stream Cleanup on unmount ---
+  // --- General Cleanup on unmount ---
   useEffect(() => {
     return () => {
+      // Stop camera stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
         streamRef.current = null;
+      }
+      // Clear any pending animation timeouts
+      if (steppingAnimationTimeoutRef.current) {
+        clearTimeout(steppingAnimationTimeoutRef.current);
       }
     };
   }, []);
