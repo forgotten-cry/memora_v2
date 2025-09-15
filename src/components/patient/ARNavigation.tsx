@@ -201,7 +201,7 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="relative w-full h-[95vh] bg-gray-900 overflow-hidden rounded-3xl shadow-2xl flex flex-col justify-between border border-slate-700/50">
+    <div className="fixed inset-0 z-50 bg-gray-900 overflow-hidden flex flex-col justify-between">
       <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-black/30"></div>
       

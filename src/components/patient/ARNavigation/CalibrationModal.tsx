@@ -8,7 +8,17 @@ interface CalibrationModalProps {
 const CalibrationModal: React.FC<CalibrationModalProps> = ({ onComplete }) => {
   const { heading } = useDeviceSensors();
   const [coveredSegments, setCoveredSegments] = useState<Set<number>>(new Set());
+  const [showSkipButton, setShowSkipButton] = useState(false);
   const TOTAL_SEGMENTS = 12; // 360 / 30 degrees per segment
+
+  useEffect(() => {
+    // Show the skip button after a timeout to encourage calibration first.
+    const skipTimer = setTimeout(() => {
+        setShowSkipButton(true);
+    }, 7000); // 7 seconds
+
+    return () => clearTimeout(skipTimer);
+  }, []);
 
   useEffect(() => {
     if (heading !== null) {
@@ -85,6 +95,18 @@ const CalibrationModal: React.FC<CalibrationModalProps> = ({ onComplete }) => {
         <p className="mt-8 text-xl font-semibold text-green-400 animate-pulse">
             Calibration Complete!
         </p>
+      )}
+
+      {!isComplete && showSkipButton && (
+        <div className="mt-8 flex flex-col items-center">
+            <button 
+                onClick={onComplete}
+                className="px-6 py-2 bg-slate-700 text-white font-semibold rounded-full shadow-lg hover:bg-slate-600 active:scale-95 transition-all"
+            >
+                Skip Calibration
+            </button>
+            <p className="text-xs text-slate-500 mt-2">(Direction may be less accurate)</p>
+        </div>
       )}
     </div>
   );
