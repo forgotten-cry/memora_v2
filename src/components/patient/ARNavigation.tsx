@@ -31,8 +31,8 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   const streamRef = useRef<MediaStream | null>(null);
 
   // --- Sensor and Navigation State ---
-  const { heading, linearAcceleration, permissionState, requestPermissions } = useDeviceSensors();
-  const { beacons, isScanning, startScan } = useBeaconScanner();
+  const { heading, linearAcceleration, permissionState, requestPermissions, stopSensors } = useDeviceSensors();
+  const { beacons, isScanning, startScan, stopScan } = useBeaconScanner();
   const [steps, setSteps] = useState(0);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
@@ -166,13 +166,16 @@ const ARNavigation: React.FC<ARNavigationProps> = ({ onBack }) => {
   };
 
   const handleFinish = () => {
-    // Proactively stop the camera stream before telling the parent to unmount.
-    // This prevents race conditions where the component unmounts before cleanup effects run.
+    // Proactively stop all external listeners and streams before unmounting
+    // to prevent race conditions.
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    // Now, trigger the navigation back to the home screen.
+    stopSensors();
+    stopScan();
+  
+    // Now it is safe to trigger the unmount.
     onBack();
   };
   

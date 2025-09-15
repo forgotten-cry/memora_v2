@@ -7,6 +7,7 @@ interface DeviceSensors {
   linearAcceleration: { x: number; y: number; z: number; } | null;
   permissionState: PermissionState;
   requestPermissions: () => Promise<boolean>;
+  stopSensors: () => void;
 }
 
 // Helper to check if we are on iOS 13+
@@ -68,15 +69,15 @@ export const useDeviceSensors = (): DeviceSensors => {
   
   const gravityRef = useRef([0, 0, 0]);
 
-  const handleOrientation = (event: DeviceOrientationEvent) => {
+  const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
     if (event.alpha !== null) {
       // For webkit browsers (iOS), event.webkitCompassHeading is more reliable
       const compassHeading = (event as any).webkitCompassHeading || event.alpha;
       setHeading(getSmoothedHeading(360 - compassHeading)); // Invert to get North=0
     }
-  };
+  }, []);
 
-  const handleMotion = (event: DeviceMotionEvent) => {
+  const handleMotion = useCallback((event: DeviceMotionEvent) => {
     // Prefer the browser's native linear acceleration if available
     if (event.acceleration && event.acceleration.x !== null) {
       const { x, y, z } = event.acceleration;
@@ -102,7 +103,12 @@ export const useDeviceSensors = (): DeviceSensors => {
       };
       setLinearAcceleration(linear);
     }
-  };
+  }, []);
+
+  const stopSensors = useCallback(() => {
+    window.removeEventListener('deviceorientation', handleOrientation);
+    window.removeEventListener('devicemotion', handleMotion);
+  }, [handleOrientation, handleMotion]);
 
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     if (!isIOS13OrNewer() || typeof (DeviceOrientationEvent as any).requestPermission !== 'function') {
@@ -136,10 +142,9 @@ export const useDeviceSensors = (): DeviceSensors => {
     }
     
     return () => {
-      window.removeEventListener('deviceorientation', handleOrientation);
-      window.removeEventListener('devicemotion', handleMotion);
+      stopSensors();
     };
-  }, [permissionState]);
+  }, [permissionState, handleOrientation, handleMotion, stopSensors]);
 
-  return { heading, linearAcceleration, permissionState, requestPermissions };
+  return { heading, linearAcceleration, permissionState, requestPermissions, stopSensors };
 };
