@@ -84,13 +84,13 @@ export const useBeaconScanner = () => {
 
 
     const startScan = useCallback(async () => {
-        if (isScanning) return;
-
         if (!navigator.bluetooth) {
             setError("Web Bluetooth API is not available on this browser.");
             console.error("Web Bluetooth API is not available.");
             return;
         }
+
+        if (isScanning) return;
 
         try {
             console.log("Requesting Bluetooth LE Scan...");
@@ -114,7 +114,7 @@ export const useBeaconScanner = () => {
             }
             setIsScanning(false);
         }
-    }, [handleAdvertisement]);
+    }, [isScanning, handleAdvertisement]);
     
     // Cleanup on unmount
     useEffect(() => {
